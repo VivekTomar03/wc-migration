@@ -1,6 +1,54 @@
 const axios = require("axios");
 require("dotenv").config();
 
+// --- helper to resolve category slug -> id ---
+async function ensureCategory(targetAPI, category) {
+  try {
+    // Check if category exists by slug
+    const { data: existing } = await targetAPI.get(
+      "/wp-json/wc/v3/products/categories",
+      { params: { slug: category.slug } }
+    );
+
+    if (existing.length > 0) {
+      return existing[0].id; // ✅ Found ID
+    }
+
+    // Create new category if missing
+    const { data: created } = await targetAPI.post(
+      "/wp-json/wc/v3/products/categories",
+      { name: category.name, slug: category.slug }
+    );
+
+    return created.id;
+  } catch (err) {
+    console.error(
+      "❌ Category sync failed:",
+      err.response?.data || err.message
+    );
+    return null;
+  }
+}
+// Helper to ensure a brand exists on target site.
+async function ensureBrand(targetAPI, brand) {
+  try {
+    const { data: existing } = await targetAPI.get(
+      "/wp-json/wc/v3/products/brands",
+      { params: { slug: brand.slug } }
+    );
+    if (existing.length) return existing[0].id;
+
+    const { data: created } = await targetAPI.post(
+      "/wp-json/wc/v3/products/brands",
+      { name: brand.name, slug: brand.slug }
+    );
+    return created.id;
+  } catch (e) {
+    console.error("Brand sync failed:", e.response?.data || e.message);
+    return null;
+  }
+}
+
 async function migrateAllProducts() {
   console.log("🚀 Starting full migration...");
 
@@ -47,8 +95,8 @@ async function migrateAllProducts() {
 
         // Filter fields WooCommerce allows
         function buildWooAPIProduct(p) {
+          console.log(p);
           return {
-            // id: p?.id,
             name: p?.name ?? "",
             slug: p?.slug ?? "",
             permalink: p?.permalink ?? "",
@@ -106,19 +154,12 @@ async function migrateAllProducts() {
             cross_sell_ids: p?.cross_sell_ids ?? [],
             parent_id: p?.parent_id ?? 0,
             purchase_note: p?.purchase_note ?? "",
-            categories:
-              p?.categories?.map((cat) => ({
-                id: cat?.id,
-                name: cat?.name ?? "",
-                slug: cat?.slug ?? "",
-                ...cat
-              })) ?? [],
-            brands: p?.brands ?? [],
+            categories: [],
+            brands: [] ,
             tags:
               p?.tags?.map((tag) => ({
-                id: tag?.id,
-                name: tag?.name ?? "",
-                slug: tag?.slug ?? "",
+               
+               
                 ...tag
               })) ?? [],
             images:
@@ -147,6 +188,32 @@ async function migrateAllProducts() {
 
         const cleanProduct = buildWooAPIProduct(product);
 
+        // --- Resolve categories ---
+        let categoryIds = [];
+        if (product?.categories?.length) {
+          for (let c of product.categories) {
+            const id = await ensureCategory(targetAPI, {
+              name: c.name,
+              slug: c.slug,
+            });
+            if (id) categoryIds.push({ id });
+          }
+        }
+        cleanProduct.categories = categoryIds;
+        // --- Resolve brands ---
+        let brandIds = [];
+        if (product?.brands?.length) {
+          for (let b of product.brands) {
+            const id = await ensureBrand(targetAPI, {
+              name: b.name,
+              slug: b.slug,
+            });
+            if (id) brandIds.push({ id });
+          }
+        }
+        cleanProduct.brands = brandIds;
+
+        // --- Save product with retries ---
         let retries = 3;
         while (retries > 0) {
           try {
