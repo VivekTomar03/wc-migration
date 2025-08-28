@@ -66,15 +66,17 @@ async function migrateAllProducts() {
             dimensions: p.dimensions,
             categories:
               p.categories?.map((cat) => ({
-                id: cat.id,
-                name: cat.name,
-                slug: cat.slug,
+                // id: cat.id,
+                // name: cat.name,
+                // slug: cat.slug,
+                ...cat
               })) || [],
             tags:
               p.tags?.map((tag) => ({
-                id: tag.id,
-                name: tag.name,
-                slug: tag.slug,
+                // id: tag.id,
+                // name: tag.name,
+                // slug: tag.slug,
+                ...tag
               })) || [],
             images:
               p.images?.map((img) => ({
