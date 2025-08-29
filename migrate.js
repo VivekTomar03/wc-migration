@@ -1,6 +1,19 @@
 const axios = require("axios");
 require("dotenv").config();
+const fs = require("fs");
 
+const STATE_FILE = "migration_state.json";
+// --- Save progress ---
+function saveState(state) {
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state));
+}
+// --- Load progress ---
+function loadState() {
+  if (fs.existsSync(STATE_FILE)) {
+    return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
+  }
+  return { page: 1, totalMigrated: 0 };
+}
 // --- helper to resolve category slug -> id ---
 async function ensureCategory(targetAPI, category) {
   try {
@@ -71,11 +84,16 @@ async function migrateAllProducts() {
     },
     timeout: 60000,
   });
-
-  let page = 1;
-  let totalMigrated = 0;
+  // 🔹 Load last progress
+  let state = loadState();
+  let page = state.page;
+  let totalMigrated = state.totalMigrated;
   let hasMore = true;
 
+//   let page = 1;
+//   let totalMigrated = 0;
+//   let hasMore = true;
+console.log("page data ", state)
   while (hasMore) {
     console.log(`📥 Fetching page ${page}...`);
 
@@ -95,7 +113,7 @@ async function migrateAllProducts() {
 
         // Filter fields WooCommerce allows
         function buildWooAPIProduct(p) {
-          console.log(p);
+        //   console.log(p);
           return {
             name: p?.name ?? "",
             slug: p?.slug ?? "",
@@ -225,6 +243,8 @@ async function migrateAllProducts() {
             console.log(
               `✅ Migrated: ${result.data.name} (New ID: ${result.data.id}) | Total so far: ${totalMigrated}`
             );
+             // 🔹 Save progress after each product
+            saveState({ page, totalMigrated });
             break; // success → exit retry loop
           } catch (err) {
             retries--;
@@ -236,7 +256,7 @@ async function migrateAllProducts() {
             if (retries === 0) {
               console.log(`⚠️ Skipping product: ${product.name}`);
             } else {
-              await new Promise((r) => setTimeout(r, 5000)); // wait 5s before retry
+              await new Promise((r) => setTimeout(r, 2000)); // wait 5s before retry
             }
           }
         }
